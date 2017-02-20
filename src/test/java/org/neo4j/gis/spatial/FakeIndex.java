@@ -19,13 +19,11 @@
  */
 package org.neo4j.gis.spatial;
 
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 import org.neo4j.gis.spatial.rtree.Envelope;
 import org.neo4j.gis.spatial.rtree.EnvelopeDecoder;
+import org.neo4j.gis.spatial.rtree.TreeMonitor;
 import org.neo4j.gis.spatial.rtree.filter.SearchFilter;
 import org.neo4j.gis.spatial.rtree.filter.SearchResults;
 import org.neo4j.gis.spatial.filter.SearchRecords;
@@ -164,6 +162,17 @@ public class FakeIndex implements LayerIndexReader, Constants {
 	@Override
 	public SearchResults searchIndex(SearchFilter filter) {
 		return new SearchResults(new NodeFilter(filter, layer.getDataset().getAllGeometryNodes()));
+	}
+
+	@Override
+	public void addMonitor( TreeMonitor monitor )
+	{
+
+	}
+
+	@Override
+	public void configure(Map<String, Object> config) {
+
 	}
 
 	@Override

@@ -19,11 +19,24 @@
  */
 package org.neo4j.gis.spatial;
 
+
+import com.vividsolutions.jts.geom.Coordinate;
+import com.vividsolutions.jts.geom.CoordinateList;
+import com.vividsolutions.jts.geom.Envelope;
+import com.vividsolutions.jts.geom.LineString;
+
+import java.io.File;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
+import com.vividsolutions.jts.geom.*;
+import org.apache.commons.io.FileUtils;
 import org.junit.Test;
-import org.neo4j.gis.spatial.rtree.NullListener;
 import org.neo4j.gis.spatial.encoders.SimpleGraphEncoder;
 import org.neo4j.gis.spatial.encoders.SimplePointEncoder;
 import org.neo4j.gis.spatial.encoders.SimplePropertyEncoder;
@@ -31,13 +44,18 @@ import org.neo4j.gis.spatial.osm.OSMGeometryEncoder;
 import org.neo4j.gis.spatial.osm.OSMLayer;
 import org.neo4j.gis.spatial.pipes.GeoPipeline;
 
-import com.vividsolutions.jts.geom.Coordinate;
-import com.vividsolutions.jts.geom.CoordinateList;
-import com.vividsolutions.jts.geom.Envelope;
-import com.vividsolutions.jts.geom.LineString;
 import org.neo4j.gis.spatial.rtree.ProgressLoggingListener;
-import org.neo4j.graphdb.Transaction;
+import org.neo4j.gis.spatial.rtree.RTreeIndex;
+import org.neo4j.gis.spatial.rtree.RTreeRelationshipTypes;
+import org.neo4j.graphdb.*;
+import org.neo4j.graphdb.event.TransactionData;
+import org.neo4j.graphdb.factory.GraphDatabaseFactory;
 
+import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+import javax.measure.unit.SI;
 
 public class LayersTest extends Neo4jTestCase
 {
@@ -283,6 +301,60 @@ public class LayersTest extends Neo4jTestCase
         assertNotNull(
                 "Missing expected shapefile export exception from multi-geometry OSM layer",
                 osmExportException );
+    }
+
+
+    @Test
+    public void testIndexAccessAfterBulkInsertion() throws Exception {
+        // Use these two lines if you want to examine the output.
+//        File dbPath = new File("target/var/BulkTest");
+//        GraphDatabaseService db = new GraphDatabaseFactory().newEmbeddedDatabase(dbPath.getCanonicalPath());
+        GraphDatabaseService db = graphDb();
+        SpatialDatabaseService sdbs = new SpatialDatabaseService(db);
+        EditableLayer layer = sdbs.getOrCreatePointLayer("Coordinates", "lat", "lon");
+
+        Random rand = new Random();
+
+        try(Transaction tx = db.beginTx()){
+            List<Node> coordinateNodes = new ArrayList<>();
+            for(int i=0; i<1000; i++) {
+                Node node = db.createNode();
+                node.addLabel(Label.label("Coordinates"));
+                node.setProperty("lat", rand.nextDouble());
+                node.setProperty("lon", rand.nextDouble());
+                coordinateNodes.add(node);
+            }
+            layer.addAll(coordinateNodes);
+            tx.success();
+        }
+
+        try(Transaction tx=db.beginTx()){ // 'points',{longitude:15.0,latitude:60.0},100
+            Result result = db.execute("CALL spatial.withinDistance('Coordinates',{longitude:0.5, latitude:0.5},1000.0) yield node as malmo");
+            int i=0;
+            ResourceIterator thing = result.columnAs("malmo");
+            while(thing.hasNext()){
+                assertNotNull(thing.next());
+                i++;
+            }
+            assertEquals(i, 1000);
+            tx.success();
+        }
+
+        try(Transaction tx = db.beginTx()){
+            String cypher = "MATCH ()-[:RTREE_ROOT]->(n)\n" +
+                    "MATCH (n)-[:RTREE_CHILD]->(m)-[:RTREE_REFERENCE]->(p)\n" +
+                    "RETURN COUNT(p)";
+            Result result = db.execute(cypher);
+//           System.out.println(result.columns().toString());
+            Object obj = result.columnAs("COUNT(p)").next();
+            assertTrue(obj instanceof Long);
+            assertTrue(((Long) obj).equals(1000L));
+            tx.success();
+        }
+
+        db.shutdown();
+
+
     }
 
 }

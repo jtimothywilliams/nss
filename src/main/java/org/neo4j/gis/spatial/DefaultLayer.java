@@ -19,10 +19,7 @@
  */
 package org.neo4j.gis.spatial;
 
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.Set;
+import java.util.*;
 
 import com.vividsolutions.jts.geom.PrecisionModel;
 import org.geotools.factory.FactoryRegistryException;
@@ -84,9 +81,21 @@ public class DefaultLayer implements Constants, Layer, SpatialDataset {
     	
     	// add BBOX to Node if it's missing
     	getGeometryEncoder().encodeGeometry(geometry, geomNode);
-    	
         index.add(geomNode);
         return new SpatialDatabaseRecord(this, geomNode, geometry);
+    }
+
+    @Override
+    public int addAll(List<Node> geomNodes) {
+        GeometryEncoder geometryEncoder = getGeometryEncoder();
+
+        for (Node geomNode : geomNodes) {
+            Geometry geometry = geometryEncoder.decodeGeometry(geomNode);
+            // add BBOX to Node if it's missing
+            geometryEncoder.encodeGeometry(geometry, geomNode);
+        }
+        index.add(geomNodes);
+        return geomNodes.size();
     }
 
     public GeometryFactory getGeometryFactory() {
@@ -301,6 +310,12 @@ public class DefaultLayer implements Constants, Layer, SpatialDataset {
         
         // index must be created *after* geometryEncoder
         this.index = new LayerRTreeIndex(spatialDatabase.getDatabase(), this);
+
+        // try determine geometry type, might use index search to detect geometries
+        Integer geometryType = getGeometryType();
+        if (geometryType != null) {
+            setGeometryType(geometryType);
+        }
     }
     
     /**
